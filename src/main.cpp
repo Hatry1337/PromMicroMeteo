@@ -15,12 +15,14 @@
 
 Adafruit_AHTX0 aht;
 DS18B20 ds;
+DS18B20 ds2;
 Photoresistor pr;
-
+OneWire wireBus(10); // select one-wire bus gpio pin 
 AsyncWebServer server(80);
 
 String location = "home";
 sensors_event_t humidity, temp, temp_outside, light;
+sensors_event_t temp_test;
 
 class RootRequestHandler : public AsyncWebHandler {
 public:
@@ -57,8 +59,9 @@ public:
     response->printf("world_humidity{location=\"%s\"} %f\n", location, humidity.relative_humidity);
     response->print("# HELP world_temperature Real world temperature data.\n");
     response->print("# TYPE world_temperature gauge\n");
-    response->printf("world_temperature{location=\"%s\"} %f\n", location, temp.temperature);
-    response->printf("world_temperature{location=\"outside\"} %f\n", temp_outside.temperature);
+    response->printf("world_temperature{location=\"%s\", sensor_type=\"aht10\"} %f\n", location, temp.temperature);
+    response->printf("world_temperature{location=\"outside\", sensor_type=\"ds18b20\"} %f\n", temp_outside.temperature);
+    response->printf("world_temperature{location=\"test\", sensor_type=\"ds18b20\"} %f\n", temp_test.temperature);
     response->print("# HELP world_light_intencity Real world ambient lightning data.\n");
     response->print("# TYPE world_light_intencity gauge\n");
     response->printf("world_light_intencity{location=\"%s\"} %f\n", location, light.light);
@@ -92,6 +95,10 @@ public:
   }
 };
 
+uint8_t dsAddr[8] = { 0x28, 0xc7, 0x68, 0xba, 0x96, 0x23, 0xb, 0xec };
+uint8_t ds2Addr[8] = { 0x28, 0x5e, 0xb6, 0x91, 0x96, 0x23, 0xb, 0xd3 };
+bool setupCompleted = false;
+
 void setup() {
   Serial.begin (9600);
   WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
@@ -114,10 +121,16 @@ void setup() {
     Serial.println("Failed to find AHT20");
   }  
 
-  if (ds.begin(new OneWire(10), 0x28)) {
+  if (ds.begin(&wireBus, dsAddr)) {
     Serial.println("Found DS18B20");
   } else {
     Serial.println("Failed to find DS18B20");
+  }
+
+  if (ds2.begin(&wireBus, ds2Addr)) {
+   Serial.println("Found DS18B20 2");
+  } else {
+   Serial.println("Failed to find DS18B20 2");
   }  
 
   if (pr.begin(0)) {
@@ -131,16 +144,20 @@ void setup() {
   server.addHandler(new MetricsRequestHandler());
 
   server.begin();
+  setupCompleted = true;
 }
 
 uint32_t lastMeasure = 0;
 
 void loop() {
+  if(!setupCompleted) return;
+  
   uint32_t t = millis();
   if(t - lastMeasure > 1000) {
     aht.getEvent(&humidity, &temp);
-    ds.getEvent(&temp_outside);
     pr.getEvent(&light);
+    ds.getEvent(&temp_outside);
+    ds2.getEvent(&temp_test);
     lastMeasure = t;
   }
 }

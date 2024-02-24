@@ -1,4 +1,7 @@
 #include "ds18b20_wrapper.h"
+#include "utils.h"
+
+uint16_t lastSensorId = 0;
 
 /*!
  *    @brief  Instantiates a new AHTX0 class
@@ -11,38 +14,75 @@ DS18B20::~DS18B20(void) {
   }
 }
 
-bool DS18B20::begin(OneWire *wire, uint8_t address) {
+bool DS18B20::begin(OneWire *wire, uint8_t *address, uint16_t sensorId) {
   delay(20); // 20 ms to power up
 
   _wireBus = wire;
-
-  uint8_t newAddr;
-  while(_wireBus->search(&newAddr)) {
-    Serial.printf("[1wire-ds] device 0x%x on bus\n", newAddr);
-    if(newAddr == address) {
-      Serial.println("[1wire-ds] found device on bus");
-      break;
+  _address = address;
+  _sensorid_temp = sensorId;
+  if(_sensorid_temp == 0) {
+    if(lastSensorId != 0) {
+      _sensorid_temp = lastSensorId;
     }
+    lastSensorId++;
   }
 
-  if(newAddr == 0 || newAddr != address) {
-    Serial.println("failed to found device on 1-wire bus");
-    return false;
+  _wireBus->reset_search();
+
+  uint8_t foundAddr[8];
+  while(_wireBus->search(foundAddr)) {
+    //Serial.printf("[1wire-ds] found device ");
+    //printBytes(foundAddr, 8);
+    //Serial.println("on 1-wire bus.");
+
+    bool eq = true;
+    for(uint8_t i = 0; i < 8; i++) {
+      if(foundAddr[i] != _address[i]) {
+        eq = false;
+        break;
+      }
+    }
+
+    if(!eq) {
+      //Serial.println("[1wire-ds] addresses does not match. searching next...");
+      continue;
+    }
+
+    //Serial.println("[1wire-ds] found matching address");
+
+    if (OneWire::crc8(foundAddr, 7) != foundAddr[7]) {
+      //Serial.print("[1wire-ds] invalid addr CRC!\n");
+      return false;
+    }
+
+    if (foundAddr[0] != 0x28) {
+      //Serial.print("[1wire-ds] device is not a DS18B20.\n");
+      return false;
+    }
+
+    delete temp_sensor;
+    temp_sensor = new DS18B20_Temp(this);
+    return true;
   }
 
-  delete temp_sensor;
-  temp_sensor = new DS18B20_Temp(this);
-  return true;
+  //Serial.println("[1wire-ds] failed to found matching address");
+  return false;
 }
 
 bool DS18B20::getEvent(sensors_event_t *temp) {
-  // #TODO add address checks  
-
   uint32_t t = millis();
 
   _wireBus->reset();
-  _wireBus->write(0xCC);
-  _wireBus->write(0xBE);
+  _wireBus->write(0x55); // send match rom command
+  _wireBus->write_bytes(_address, 8); // send ds's address to match
+  _wireBus->write(0x44, 1); // send perforom convertion command
+
+  delay(750); // for 12bit resolution we need wait for 750ms to perform temperature conversion
+
+  _wireBus->reset();
+  _wireBus->write(0x55); // send match rom command
+  _wireBus->write_bytes(_address, 8); // send ds's address to match
+  _wireBus->write(0xBE); // read scratchpad
 
   byte i;
   byte data[2];
@@ -51,6 +91,12 @@ bool DS18B20::getEvent(sensors_event_t *temp) {
     data[i] = _wireBus->read();
   }
 
+  _wireBus->reset();
+
+  //Serial.printf("[1wire-ds] ds18b20[%d] answer: ", _sensorid_temp);
+  //printBytes(data, 2);
+  //Serial.print("\n");
+  
   result = (data[1]<<8) |data[0];
   int16_t whole_degree = (result & 0x07FF) >> 4; // cut out sign bits and shift
   _temperature = whole_degree +
@@ -61,10 +107,6 @@ bool DS18B20::getEvent(sensors_event_t *temp) {
   if (data[1]&128) {
     _temperature *= -1;
   }
-
-  _wireBus->reset();
-  _wireBus->write(0xCC);
-  _wireBus->write(0x44, 1);
 
   // use helpers to fill in the events
   if (temp) {

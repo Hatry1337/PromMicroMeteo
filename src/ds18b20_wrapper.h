@@ -20,8 +20,7 @@ public:
   DS18B20();
   ~DS18B20();
 
-  bool begin(OneWire *wire, uint8_t address = 0x38);
-
+  bool begin(OneWire *wire, uint8_t *address, uint16_t id = 0);
   bool getEvent(sensors_event_t *temp);
   uint8_t getStatus(void);
   Adafruit_Sensor *getTemperatureSensor(void);
@@ -31,7 +30,7 @@ protected:
 
   uint16_t _sensorid_temp;     ///< ID number for temperature
 
-  uint8_t _address; ///< address on bus
+  uint8_t *_address; ///< address on bus
 
   OneWire *_wireBus = NULL;
 
