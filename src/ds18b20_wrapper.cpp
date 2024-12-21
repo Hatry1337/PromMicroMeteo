@@ -4,7 +4,7 @@
 uint16_t lastSensorId = 0;
 
 /*!
- *    @brief  Instantiates a new AHTX0 class
+ *    @brief  Instantiates a new DS18B20 class
  */
 DS18B20::DS18B20(void) {}
 
@@ -84,9 +84,9 @@ bool DS18B20::getEvent(sensors_event_t *temp) {
   _wireBus->write_bytes(_address, 8); // send ds's address to match
   _wireBus->write(0xBE); // read scratchpad
 
-  byte i;
-  byte data[2];
-  int16_t result;
+  uint8_t i;
+  uint8_t data[2];
+  uint16_t result;
   for (int i = 0; i < 2; i++) {
     data[i] = _wireBus->read();
   }
@@ -97,16 +97,13 @@ bool DS18B20::getEvent(sensors_event_t *temp) {
   //printBytes(data, 2);
   //Serial.print("\n");
   
-  result = (data[1]<<8) |data[0];
-  int16_t whole_degree = (result & 0x07FF) >> 4; // cut out sign bits and shift
+  result = (data[1]<<8) | data[0];
+  int8_t whole_degree = (result & 0xFF0) >> 4;
   _temperature = whole_degree +
   0.5 * ((data[0]&0x8)>>3) +
   0.25 * ((data[0]&0x4)>>2) +
   0.125 * ((data[0]&0x2)>>1) +
   0.0625 * (data[0]&0x1);
-  if (data[1]&128) {
-    _temperature *= -1;
-  }
 
   // use helpers to fill in the events
   if (temp) {
